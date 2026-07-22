@@ -38,6 +38,15 @@ function validImage(value: unknown): value is string {
     && /^data:image\/(jpeg|png|webp);base64,[a-z0-9+/=]+$/i.test(value);
 }
 
+function publicOpenAiError(error: unknown) {
+  if (!(error instanceof OpenAI.APIError)) return "Неизвестная ошибка сервера";
+  if (error.status === 401) return "API-ключ отклонён OpenAI";
+  if (error.status === 403 || error.status === 404) return "Модель недоступна для этого API-проекта";
+  if (error.status === 429) return "Нет доступной квоты или превышен лимит OpenAI";
+  if (error.status === 400) return "OpenAI отклонил параметры запроса";
+  return `Ошибка OpenAI (${error.status || "без кода"})`;
+}
+
 export default async function handler(request: VercelRequest, response: VercelResponse) {
   if (request.method !== "POST") {
     response.setHeader("Allow", "POST");
@@ -57,7 +66,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
   try {
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const aiResponse = await client.responses.create({
-      model: process.env.OPENAI_VISION_MODEL || "gpt-5.6",
+      model: process.env.OPENAI_VISION_MODEL || "gpt-5-mini",
       store: false,
       input: [{
         role: "user",
@@ -94,6 +103,6 @@ export default async function handler(request: VercelRequest, response: VercelRe
     return response.status(200).json(parsed);
   } catch (error) {
     console.error("OpenAI analysis failed", error);
-    return response.status(502).json({ error: "ИИ не смог завершить анализ изображения" });
+    return response.status(502).json({ error: publicOpenAiError(error) });
   }
 }

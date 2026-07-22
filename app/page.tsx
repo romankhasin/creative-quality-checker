@@ -25,6 +25,7 @@ type CreativeResult = {
   disclaimerText: string;
   disclaimerSimilarity?: number;
   analysisSource: "ai" | "local";
+  aiError?: string;
   progress: number;
   status: CheckState;
 };
@@ -252,11 +253,16 @@ function prepareDisclaimerCrop(image: HTMLImageElement, startRatio: number, enha
 }
 
 function cleanOcrText(text: string) {
-  return text
+  let cleaned = text
     .replace(/[|_]{2,}/g, " ")
     .replace(/\s+/g, " ")
     .replace(/^[^А-ЯA-Z0-9]+|[^А-ЯA-Z0-9.)]+$/gi, "")
     .trim();
+  // Local OCR sometimes reads grid lines and facade details as a short
+  // sequence of random characters before the real legal copy.
+  const legalStart = cleaned.search(/\bРЕКЛАМА\b|\bРЕКЛАМОДАТЕЛЬ\b/i);
+  if (legalStart > 0) cleaned = cleaned.slice(legalStart);
+  return cleaned;
 }
 
 function disclaimerMarkers(text: string) {
@@ -417,14 +423,15 @@ export default function Home() {
           const status = deriveOverall(next);
           patchResult(item.id, { grid, disclaimerText, disclaimerStatus, analysisSource: "ai", progress: 100, status });
           Object.assign(item, { grid, disclaimerText, disclaimerStatus, analysisSource: "ai", progress: 100, status });
-        } catch {
+        } catch (error) {
+          const aiError = error instanceof Error ? error.message : "ИИ-анализ недоступен";
           const best = await analyzeWithLocalOcr(image, (progress) => patchResult(item.id, { progress }));
           const disclaimerText = best?.text || "";
           const disclaimerStatus = disclaimerCheckState(disclaimerText, best?.confidence || 0);
           const next = { ...item, disclaimerText, disclaimerStatus, analysisSource: "local" as const };
           const status = deriveOverall(next);
-          patchResult(item.id, { disclaimerText, disclaimerStatus, analysisSource: "local", progress: 100, status });
-          Object.assign(item, { disclaimerText, disclaimerStatus, analysisSource: "local", progress: 100, status });
+          patchResult(item.id, { disclaimerText, disclaimerStatus, analysisSource: "local", aiError, progress: 100, status });
+          Object.assign(item, { disclaimerText, disclaimerStatus, analysisSource: "local", aiError, progress: 100, status });
         }
       } catch {
         patchResult(item.id, {
@@ -633,6 +640,7 @@ export default function Home() {
                         <>
                           <blockquote>{item.disclaimerText || "Дисклеймер не найден или текст слишком мелкий для уверенного распознавания."}</blockquote>
                           <p className="analysis-source">Источник: {item.analysisSource === "ai" ? "онлайн-анализ ИИ" : "резервный локальный OCR"}</p>
+                          {item.analysisSource === "local" && item.aiError && <p className="warning-text">ИИ: {item.aiError}</p>}
                           {item.disclaimerSimilarity !== undefined && <p className={item.disclaimerSimilarity >= 88 ? "match-good" : "warning-text"}>Совпадение с эталоном в этой пачке: <b>{item.disclaimerSimilarity}%</b></p>}
                         </>
                       )}

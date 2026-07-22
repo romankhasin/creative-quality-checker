@@ -34,7 +34,7 @@ npx tsc --noEmit --strict --skipLibCheck --esModuleInterop --module NodeNext --m
 2. В Vercel выберите **Add New → Project** и импортируйте репозиторий.
 3. Настройки сборки берутся из `vercel.json`: команда `npm run build:vercel`, папка результата `dist`.
 4. В **Settings → Environment Variables** добавьте `OPENAI_API_KEY` для Production и Preview.
-5. Необязательно добавьте `OPENAI_VISION_MODEL`; по умолчанию используется `gpt-5.6`.
+5. Необязательно добавьте `OPENAI_VISION_MODEL`; по умолчанию используется `gpt-5-mini` с поддержкой изображений и Structured Outputs.
 6. Нажмите **Deploy**.
 
 Не добавляйте реальный API-ключ в файлы проекта, GitHub или клиентский код.
