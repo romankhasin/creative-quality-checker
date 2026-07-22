@@ -413,11 +413,17 @@ export default function Home() {
           const disclaimerStatus: CheckState = !ai.disclaimer.present
             ? "fail"
             : ai.disclaimer.confidence >= 0.86 && disclaimerText.length >= 18 ? "pass" : "review";
+          const gridScore = Math.max(0, Math.min(100, Math.round(ai.grid.score)));
+          const gridDefects = ai.grid.issues.map((issue) => issue.trim()).filter(Boolean);
+          const gridStatus: CheckState = gridScore < 60 || ai.grid.status === "fail"
+            ? "fail"
+            : gridDefects.length > 0 || gridScore < 85 || ai.grid.status === "review" ? "review" : "pass";
           const grid: GridCheck = {
-            ...item.grid,
-            score: Math.max(0, Math.min(100, Math.round(ai.grid.score))),
-            status: ai.grid.status,
-            issues: ai.grid.issues.length ? ai.grid.issues : item.grid.issues,
+            score: gridScore,
+            status: gridStatus,
+            issues: gridDefects.length ? gridDefects : ["Явных нарушений сетки элементов переднего плана не найдено"],
+            verticalGuides: [],
+            horizontalGuides: [],
           };
           const next = { ...item, grid, disclaimerText, disclaimerStatus, analysisSource: "ai" as const };
           const status = deriveOverall(next);
@@ -429,10 +435,17 @@ export default function Home() {
           const disclaimerText = best?.text || "";
           const localOcrState = disclaimerCheckState(disclaimerText, best?.confidence || 0);
           const disclaimerStatus: CheckState = localOcrState === "fail" ? "fail" : "review";
-          const next = { ...item, disclaimerText, disclaimerStatus, analysisSource: "local" as const };
+          const grid: GridCheck = {
+            ...item.grid,
+            status: "review",
+            issues: ["Точная проверка элементов переднего плана недоступна без онлайн-ИИ"],
+            verticalGuides: [],
+            horizontalGuides: [],
+          };
+          const next = { ...item, grid, disclaimerText, disclaimerStatus, analysisSource: "local" as const };
           const status = deriveOverall(next);
-          patchResult(item.id, { disclaimerText, disclaimerStatus, analysisSource: "local", aiError, progress: 100, status });
-          Object.assign(item, { disclaimerText, disclaimerStatus, analysisSource: "local", aiError, progress: 100, status });
+          patchResult(item.id, { grid, disclaimerText, disclaimerStatus, analysisSource: "local", aiError, progress: 100, status });
+          Object.assign(item, { grid, disclaimerText, disclaimerStatus, analysisSource: "local", aiError, progress: 100, status });
         }
       } catch {
         patchResult(item.id, {
@@ -596,10 +609,6 @@ export default function Home() {
                 <div className="preview-column">
                   <div className="preview-frame">
                     <img src={item.url} alt={`Превью ${item.file.name}`} />
-                    <div className="guides" aria-hidden="true">
-                      {item.grid.verticalGuides.map((position) => <i key={`v-${position}`} className="guide-v" style={{ left: `${position}%` }} />)}
-                      {item.grid.horizontalGuides.map((position) => <i key={`h-${position}`} className="guide-h" style={{ top: `${position}%` }} />)}
-                    </div>
                     <span className="card-index">{String(index + 1).padStart(2, "0")}</span>
                   </div>
                   <p title={item.file.name}>{item.file.name}</p>
