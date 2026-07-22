@@ -1,0 +1,16 @@
+КАК ЗАГРУЗИТЬ ПРОЕКТ
+
+1. Распакуйте архив.
+2. Откройте репозиторий:
+   https://github.com/romankhasin/creative-quality-checker
+3. Нажмите Add file → Upload files.
+4. Перетащите в окно содержимое распакованной папки.
+5. Внизу нажмите Commit changes.
+6. Откройте Settings → Pages.
+7. В Source выберите Deploy from a branch.
+8. Выберите ветку main и папку /docs, затем нажмите Save.
+
+После загрузки GitHub автоматически запустит сборку. Сайт появится по адресу:
+https://romankhasin.github.io/creative-quality-checker/
+
+Скрытые файлы не нужны: готовая версия сайта находится в видимой папке docs.
