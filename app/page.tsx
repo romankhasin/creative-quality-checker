@@ -260,7 +260,7 @@ function cleanOcrText(text: string) {
     .trim();
   // Local OCR sometimes reads grid lines and facade details as a short
   // sequence of random characters before the real legal copy.
-  const legalStart = cleaned.search(/\bРЕКЛАМА\b|\bРЕКЛАМОДАТЕЛЬ\b/i);
+  const legalStart = cleaned.search(/РЕКЛАМА(?=[\s.,:;—-]|$)|РЕКЛАМОДАТЕЛЬ/i);
   if (legalStart > 0) cleaned = cleaned.slice(legalStart);
   return cleaned;
 }
@@ -427,7 +427,8 @@ export default function Home() {
           const aiError = error instanceof Error ? error.message : "ИИ-анализ недоступен";
           const best = await analyzeWithLocalOcr(image, (progress) => patchResult(item.id, { progress }));
           const disclaimerText = best?.text || "";
-          const disclaimerStatus = disclaimerCheckState(disclaimerText, best?.confidence || 0);
+          const localOcrState = disclaimerCheckState(disclaimerText, best?.confidence || 0);
+          const disclaimerStatus: CheckState = localOcrState === "fail" ? "fail" : "review";
           const next = { ...item, disclaimerText, disclaimerStatus, analysisSource: "local" as const };
           const status = deriveOverall(next);
           patchResult(item.id, { disclaimerText, disclaimerStatus, analysisSource: "local", aiError, progress: 100, status });
@@ -568,7 +569,7 @@ export default function Home() {
           <span className="upload-cta">{isAnalyzing ? "Пожалуйста, подождите" : "Выбрать файлы"}</span>
         </div>
 
-        <div className="privacy-note"><span>◇</span><p><b>Защищённый ИИ-анализ.</b> Изображения отправляются в OpenAI через сервер Vercel; API-ключ никогда не передаётся в браузер. Если сервис недоступен, включается локальный OCR.</p></div>
+        <div className="privacy-note"><span>◇</span><p><b>Бесплатный ИИ-анализ Gemini.</b> Изображения отправляются в Google через сервер Vercel; API-ключ никогда не передаётся в браузер. На бесплатном тарифе данные могут использоваться Google для улучшения продуктов. Если лимит исчерпан, включается локальный OCR.</p></div>
       </section>
 
       {results.length > 0 && (
@@ -594,7 +595,6 @@ export default function Home() {
               <article className="creative-card" key={item.id}>
                 <div className="preview-column">
                   <div className="preview-frame">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={item.url} alt={`Превью ${item.file.name}`} />
                     <div className="guides" aria-hidden="true">
                       {item.grid.verticalGuides.map((position) => <i key={`v-${position}`} className="guide-v" style={{ left: `${position}%` }} />)}

@@ -8,7 +8,7 @@
 5. Внизу нажмите Commit changes.
 6. Откройте https://vercel.com/new и импортируйте репозиторий.
 7. После импорта откройте Settings → Environment Variables.
-8. Добавьте OPENAI_API_KEY и отметьте Production и Preview.
+8. Добавьте GEMINI_API_KEY и отметьте Production и Preview.
 9. Нажмите Deploy.
 
 Vercel покажет новый адрес сайта после успешного развёртывания.

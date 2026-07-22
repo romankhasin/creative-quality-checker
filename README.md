@@ -12,7 +12,7 @@
 - резервный локальный OCR, если онлайн-анализ временно недоступен;
 - выгрузка результатов в CSV.
 
-Изображения передаются в OpenAI только через защищённую серверную функцию Vercel. `OPENAI_API_KEY` хранится в переменных окружения Vercel и никогда не попадает в браузер.
+Изображения передаются в Gemini только через защищённую серверную функцию Vercel. `GEMINI_API_KEY` хранится в переменных окружения Vercel и никогда не попадает в браузер. На бесплатном тарифе отправленные данные могут использоваться Google для улучшения продуктов.
 
 ## Запуск
 
@@ -33,8 +33,9 @@ npx tsc --noEmit --strict --skipLibCheck --esModuleInterop --module NodeNext --m
 1. Загрузите проект в GitHub.
 2. В Vercel выберите **Add New → Project** и импортируйте репозиторий.
 3. Настройки сборки берутся из `vercel.json`: команда `npm run build:vercel`, папка результата `dist`.
-4. В **Settings → Environment Variables** добавьте `OPENAI_API_KEY` для Production и Preview.
-5. Необязательно добавьте `OPENAI_VISION_MODEL`; по умолчанию используется `gpt-5-mini` с поддержкой изображений и Structured Outputs.
-6. Нажмите **Deploy**.
+4. Создайте бесплатный ключ в Google AI Studio.
+5. В **Settings → Environment Variables** добавьте `GEMINI_API_KEY` для Production и Preview.
+6. Необязательно добавьте `GEMINI_VISION_MODEL`; по умолчанию используется `gemini-3.6-flash`.
+7. Нажмите **Deploy**.
 
 Не добавляйте реальный API-ключ в файлы проекта, GitHub или клиентский код.

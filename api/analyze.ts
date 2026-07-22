@@ -1,28 +1,25 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import OpenAI from "openai";
+import { GoogleGenAI } from "@google/genai";
 
 const MAX_IMAGE_LENGTH = 5_500_000;
 
 const resultSchema = {
   type: "object",
-  additionalProperties: false,
   properties: {
     disclaimer: {
       type: "object",
-      additionalProperties: false,
       properties: {
         present: { type: "boolean" },
         text: { type: "string" },
-        confidence: { type: "number", minimum: 0, maximum: 1 },
+        confidence: { type: "number" },
         issues: { type: "array", items: { type: "string" } },
       },
       required: ["present", "text", "confidence", "issues"],
     },
     grid: {
       type: "object",
-      additionalProperties: false,
       properties: {
-        score: { type: "integer", minimum: 0, maximum: 100 },
+        score: { type: "integer" },
         status: { type: "string", enum: ["pass", "review", "fail"] },
         issues: { type: "array", items: { type: "string" } },
       },
@@ -38,13 +35,13 @@ function validImage(value: unknown): value is string {
     && /^data:image\/(jpeg|png|webp);base64,[a-z0-9+/=]+$/i.test(value);
 }
 
-function publicOpenAiError(error: unknown) {
-  if (!(error instanceof OpenAI.APIError)) return "Неизвестная ошибка сервера";
-  if (error.status === 401) return "API-ключ отклонён OpenAI";
-  if (error.status === 403 || error.status === 404) return "Модель недоступна для этого API-проекта";
-  if (error.status === 429) return "Нет доступной квоты или превышен лимит OpenAI";
-  if (error.status === 400) return "OpenAI отклонил параметры запроса";
-  return `Ошибка OpenAI (${error.status || "без кода"})`;
+function publicGeminiError(error: unknown) {
+  const status = typeof error === "object" && error && "status" in error ? Number(error.status) : 0;
+  if (status === 401 || status === 403) return "GEMINI_API_KEY отклонён Google";
+  if (status === 404) return "Модель Gemini недоступна для этого API-проекта";
+  if (status === 429) return "Исчерпан бесплатный лимит Gemini — попробуйте позже";
+  if (status === 400) return "Gemini отклонил параметры запроса";
+  return `Ошибка Gemini${status ? ` (${status})` : ""}`;
 }
 
 export default async function handler(request: VercelRequest, response: VercelResponse) {
@@ -53,8 +50,8 @@ export default async function handler(request: VercelRequest, response: VercelRe
     return response.status(405).json({ error: "Разрешён только POST-запрос" });
   }
 
-  if (!process.env.OPENAI_API_KEY) {
-    return response.status(503).json({ error: "На сервере не настроен OPENAI_API_KEY" });
+  if (!process.env.GEMINI_API_KEY) {
+    return response.status(503).json({ error: "На сервере не настроен GEMINI_API_KEY" });
   }
 
   const image = request.body?.image;
@@ -64,16 +61,15 @@ export default async function handler(request: VercelRequest, response: VercelRe
   }
 
   try {
-    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    const aiResponse = await client.responses.create({
-      model: process.env.OPENAI_VISION_MODEL || "gpt-5-mini",
-      store: false,
-      input: [{
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: `Проверь рекламный креатив ${filename} как специалист по контролю качества.
+    const dataUrl = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/i.exec(image);
+    if (!dataUrl) return response.status(400).json({ error: "Некорректное изображение" });
+    const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const interaction = await client.interactions.create({
+      model: process.env.GEMINI_VISION_MODEL || "gemini-3.6-flash",
+      input: [
+        {
+          type: "text",
+          text: `Проверь рекламный креатив ${filename} как специалист по контролю качества.
 
 ДИСКЛЕЙМЕР:
 - Найди только юридический дисклеймер, обычно это самый мелкий текст в нижней части баннера.
@@ -85,24 +81,22 @@ export default async function handler(request: VercelRequest, response: VercelRe
 - Проверь ровность элементов, визуальные поля, выравнивание по вертикали/горизонтали, слишком тесные интервалы и выходы к краям.
 - score — оценка от 0 до 100. pass — явных проблем нет; review — есть сомнение; fail — заметная ошибка.
 - Все пояснения верни на русском языке.`,
-          },
-          { type: "input_image", image_url: image, detail: "high" },
-        ],
-      }],
-      text: {
-        format: {
-          type: "json_schema",
-          name: "creative_quality_result",
-          strict: true,
-          schema: resultSchema,
         },
+        { type: "image", data: dataUrl[2], mime_type: dataUrl[1] },
+      ],
+      response_format: {
+        type: "text",
+        mime_type: "application/json",
+        schema: resultSchema,
       },
+      generation_config: { thinking_level: "minimal" },
     });
 
-    const parsed = JSON.parse(aiResponse.output_text);
+    if (!interaction.output_text) throw new Error("Gemini returned an empty response");
+    const parsed = JSON.parse(interaction.output_text);
     return response.status(200).json(parsed);
   } catch (error) {
-    console.error("OpenAI analysis failed", error);
-    return response.status(502).json({ error: publicOpenAiError(error) });
+    console.error("Gemini analysis failed", error);
+    return response.status(502).json({ error: publicGeminiError(error) });
   }
 }
