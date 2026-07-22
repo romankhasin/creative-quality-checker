@@ -24,8 +24,23 @@ type CreativeResult = {
   disclaimerStatus: CheckState;
   disclaimerText: string;
   disclaimerSimilarity?: number;
+  analysisSource: "ai" | "local";
   progress: number;
   status: CheckState;
+};
+
+type AiAnalysis = {
+  disclaimer: {
+    present: boolean;
+    text: string;
+    confidence: number;
+    issues: string[];
+  };
+  grid: {
+    score: number;
+    status: "pass" | "review" | "fail";
+    issues: string[];
+  };
 };
 
 const INITIAL_SIZES = [
@@ -65,6 +80,33 @@ function loadImage(file: File): Promise<{ image: HTMLImageElement; url: string }
     };
     image.src = url;
   });
+}
+
+function imageForAi(image: HTMLImageElement) {
+  const maxSide = 2200;
+  const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Не удалось подготовить изображение");
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.92);
+}
+
+async function analyzeWithAi(image: HTMLImageElement, filename: string): Promise<AiAnalysis> {
+  const response = await fetch("/api/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image: imageForAi(image), filename }),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.error || "ИИ-анализ недоступен");
+  }
+  return response.json();
 }
 
 function normalizeSize(width: number, height: number) {
@@ -181,20 +223,26 @@ function analyzeGrid(image: HTMLImageElement): GridCheck {
   };
 }
 
-function prepareDisclaimerCrop(image: HTMLImageElement) {
-  const sourceY = Math.round(image.naturalHeight * 0.58);
+function prepareDisclaimerCrop(image: HTMLImageElement, startRatio: number, enhanced: boolean) {
+  const sourceY = Math.round(image.naturalHeight * startRatio);
   const sourceHeight = image.naturalHeight - sourceY;
-  const multiplier = Math.min(3.5, 1800 / image.naturalWidth);
+  const multiplier = Math.min(4.5, 2400 / image.naturalWidth);
   const canvas = document.createElement("canvas");
-  canvas.width = Math.max(600, Math.round(image.naturalWidth * multiplier));
+  canvas.width = Math.max(900, Math.round(image.naturalWidth * multiplier));
   canvas.height = Math.round(sourceHeight * (canvas.width / image.naturalWidth));
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) return image.src;
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
   context.drawImage(image, 0, sourceY, image.naturalWidth, sourceHeight, 0, 0, canvas.width, canvas.height);
+  if (!enhanced) return canvas.toDataURL("image/png");
+
   const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
   for (let index = 0; index < imageData.data.length; index += 4) {
     const value = imageData.data[index] * 0.299 + imageData.data[index + 1] * 0.587 + imageData.data[index + 2] * 0.114;
-    const contrasted = value > 150 ? 255 : value < 80 ? 0 : Math.round((value - 80) * 3.64);
+    // Soft contrast preserves the antialiasing of tiny letters. The previous
+    // hard threshold destroyed thin Cyrillic strokes and produced gibberish.
+    const contrasted = Math.max(0, Math.min(255, Math.round((value - 128) * 1.55 + 128)));
     imageData.data[index] = contrasted;
     imageData.data[index + 1] = contrasted;
     imageData.data[index + 2] = contrasted;
@@ -211,6 +259,64 @@ function cleanOcrText(text: string) {
     .trim();
 }
 
+function disclaimerMarkers(text: string) {
+  const normalized = text.toLowerCase().replace(/ё/g, "е");
+  const checks = [
+    /реклам|reklam|pekлам|peklam/,
+    /инн|inn/,
+    /застрой|застр0й|developer/,
+    /проектн.{0,12}деклар|наш[.\s-]*дом[.\s-]*рф|нашдомрф/,
+    /срок.{0,12}акци|level[.\s-]*ru/,
+  ];
+  return checks.filter((pattern) => pattern.test(normalized)).length;
+}
+
+function ocrCandidateScore(text: string, confidence: number) {
+  if (!text) return 0;
+  const letters = text.match(/[а-яёa-z]/gi)?.length || 0;
+  const noise = text.match(/[|_[\]{}<>]/g)?.length || 0;
+  return disclaimerMarkers(text) * 45 + Math.min(text.length, 240) * 0.18 + confidence * 0.35 + letters * 0.08 - noise * 4;
+}
+
+function disclaimerCheckState(text: string, confidence: number): CheckState {
+  if (text.length < 18) return "fail";
+  const markers = disclaimerMarkers(text);
+  if (markers >= 2 && confidence >= 35) return "pass";
+  return "review";
+}
+
+async function analyzeWithLocalOcr(image: HTMLImageElement, onProgress: (progress: number) => void) {
+  const crops = [
+    prepareDisclaimerCrop(image, 0.7, true),
+    prepareDisclaimerCrop(image, 0.56, false),
+  ];
+  const { createWorker, PSM } = await import("tesseract.js");
+  let activePass = 0;
+  const worker = await createWorker("rus+eng", 1, {
+    logger: (message) => {
+      if (message.status === "recognizing text") {
+        onProgress(Math.round(((activePass + (message.progress || 0)) / crops.length) * 100));
+      }
+    },
+  });
+  try {
+    await worker.setParameters({
+      tessedit_pageseg_mode: PSM.SINGLE_BLOCK,
+      preserve_interword_spaces: "1",
+      user_defined_dpi: "300",
+    });
+    const candidates: Array<{ text: string; confidence: number }> = [];
+    for (const crop of crops) {
+      const { data } = await worker.recognize(crop);
+      candidates.push({ text: cleanOcrText(data.text), confidence: data.confidence || 0 });
+      activePass += 1;
+    }
+    return candidates.sort((a, b) => ocrCandidateScore(b.text, b.confidence) - ocrCandidateScore(a.text, a.confidence))[0];
+  } finally {
+    await worker.terminate();
+  }
+}
+
 function similarity(first: string, second: string) {
   const tokenize = (value: string) => new Set(value.toLowerCase().replace(/[^а-яёa-z0-9]+/gi, " ").split(" ").filter(Boolean));
   const a = tokenize(first);
@@ -221,7 +327,7 @@ function similarity(first: string, second: string) {
 }
 
 function deriveOverall(result: Pick<CreativeResult, "sizeStatus" | "grid" | "disclaimerStatus">): CheckState {
-  if (result.sizeStatus === "fail" || result.disclaimerStatus === "fail") return "fail";
+  if (result.sizeStatus === "fail" || result.grid.status === "fail" || result.disclaimerStatus === "fail") return "fail";
   if (result.grid.status === "review" || result.disclaimerStatus === "review") return "review";
   return "pass";
 }
@@ -277,6 +383,7 @@ export default function Home() {
           grid,
           disclaimerStatus: "running",
           disclaimerText: "",
+          analysisSource: "local",
           progress: 0,
           status: "running",
         });
@@ -292,27 +399,33 @@ export default function Home() {
         const image = new Image();
         image.src = item.url;
         await image.decode();
-        const crop = prepareDisclaimerCrop(image);
-        const { createWorker } = await import("tesseract.js");
-        const worker = await createWorker("rus+eng", 1, {
-          logger: (message) => {
-            if (message.status === "recognizing text") patchResult(item.id, { progress: Math.round((message.progress || 0) * 100) });
-          },
-        });
-        const { data } = await worker.recognize(crop);
-        await worker.terminate();
-        const disclaimerText = cleanOcrText(data.text);
-        const disclaimerStatus: CheckState = disclaimerText.length >= 18 ? "pass" : "fail";
-        const next = { ...item, disclaimerText, disclaimerStatus };
-        patchResult(item.id, {
-          disclaimerText,
-          disclaimerStatus,
-          progress: 100,
-          status: deriveOverall(next),
-        });
-        item.disclaimerText = disclaimerText;
-        item.disclaimerStatus = disclaimerStatus;
-        item.status = deriveOverall(next);
+        patchResult(item.id, { progress: 12 });
+
+        try {
+          const ai = await analyzeWithAi(image, item.file.name);
+          const disclaimerText = cleanOcrText(ai.disclaimer.text || "");
+          const disclaimerStatus: CheckState = !ai.disclaimer.present
+            ? "fail"
+            : ai.disclaimer.confidence >= 0.86 && disclaimerText.length >= 18 ? "pass" : "review";
+          const grid: GridCheck = {
+            ...item.grid,
+            score: Math.max(0, Math.min(100, Math.round(ai.grid.score))),
+            status: ai.grid.status,
+            issues: ai.grid.issues.length ? ai.grid.issues : item.grid.issues,
+          };
+          const next = { ...item, grid, disclaimerText, disclaimerStatus, analysisSource: "ai" as const };
+          const status = deriveOverall(next);
+          patchResult(item.id, { grid, disclaimerText, disclaimerStatus, analysisSource: "ai", progress: 100, status });
+          Object.assign(item, { grid, disclaimerText, disclaimerStatus, analysisSource: "ai", progress: 100, status });
+        } catch {
+          const best = await analyzeWithLocalOcr(image, (progress) => patchResult(item.id, { progress }));
+          const disclaimerText = best?.text || "";
+          const disclaimerStatus = disclaimerCheckState(disclaimerText, best?.confidence || 0);
+          const next = { ...item, disclaimerText, disclaimerStatus, analysisSource: "local" as const };
+          const status = deriveOverall(next);
+          patchResult(item.id, { disclaimerText, disclaimerStatus, analysisSource: "local", progress: 100, status });
+          Object.assign(item, { disclaimerText, disclaimerStatus, analysisSource: "local", progress: 100, status });
+        }
       } catch {
         patchResult(item.id, {
           disclaimerStatus: "review",
@@ -330,7 +443,7 @@ export default function Home() {
       setResults((current) => current.map((item) => {
         if (!prepared.some((candidate) => candidate.id === item.id) || item.disclaimerText.length < 18) return item;
         const disclaimerSimilarity = similarity(reference, item.disclaimerText);
-        const disclaimerStatus: CheckState = disclaimerSimilarity >= 88 ? "pass" : "review";
+        const disclaimerStatus: CheckState = disclaimerSimilarity >= 88 ? item.disclaimerStatus : "review";
         return { ...item, disclaimerSimilarity, disclaimerStatus, status: deriveOverall({ ...item, disclaimerStatus }) };
       }));
     }
@@ -397,7 +510,7 @@ export default function Home() {
 
       <section className="hero" id="top">
         <div className="hero-copy">
-          <span className="eyebrow"><i /> Проверка на устройстве</span>
+          <span className="eyebrow"><i /> Онлайн-проверка с ИИ</span>
           <h1>Каждый баннер.<br /><em>До пикселя.</em></h1>
           <p>Загрузите один креатив или всю сетку. Сервис проверит размеры, выравнивание элементов и единообразие дисклеймеров.</p>
         </div>
@@ -448,7 +561,7 @@ export default function Home() {
           <span className="upload-cta">{isAnalyzing ? "Пожалуйста, подождите" : "Выбрать файлы"}</span>
         </div>
 
-        <div className="privacy-note"><span>◇</span><p><b>Изображения остаются у вас.</b> Анализ выполняется локально в браузере — файлы не отправляются на сервер.</p></div>
+        <div className="privacy-note"><span>◇</span><p><b>Защищённый ИИ-анализ.</b> Изображения отправляются в OpenAI через сервер Vercel; API-ключ никогда не передаётся в браузер. Если сервис недоступен, включается локальный OCR.</p></div>
       </section>
 
       {results.length > 0 && (
@@ -519,6 +632,7 @@ export default function Home() {
                       ) : (
                         <>
                           <blockquote>{item.disclaimerText || "Дисклеймер не найден или текст слишком мелкий для уверенного распознавания."}</blockquote>
+                          <p className="analysis-source">Источник: {item.analysisSource === "ai" ? "онлайн-анализ ИИ" : "резервный локальный OCR"}</p>
                           {item.disclaimerSimilarity !== undefined && <p className={item.disclaimerSimilarity >= 88 ? "match-good" : "warning-text"}>Совпадение с эталоном в этой пачке: <b>{item.disclaimerSimilarity}%</b></p>}
                         </>
                       )}

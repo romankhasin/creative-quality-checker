@@ -121,6 +121,7 @@ blockquote { margin: 11px 0 0; padding: 11px 13px; background: var(--paper); bor
 .ocr-progress > span { flex: 1; height: 4px; background: #e6e4dc; border-radius: 5px; overflow: hidden; }
 .ocr-progress i { display: block; height: 100%; background: var(--sky-strong); transition: width .2s; }
 .ocr-progress small { color: var(--muted); font-size: 9px; }
+.analysis-source { margin: 6px 0 0; color: var(--muted); font-size: 9px; }
 
 footer { min-height: 110px; padding: 30px clamp(24px, 5vw, 76px); background: var(--ink); color: white; display: flex; align-items: center; justify-content: space-between; gap: 30px; }
 footer span { font-family: Georgia,serif; font-size: 21px; color: var(--sky); }

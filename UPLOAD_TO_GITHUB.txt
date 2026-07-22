@@ -6,11 +6,11 @@
 3. Нажмите Add file → Upload files.
 4. Перетащите в окно содержимое распакованной папки.
 5. Внизу нажмите Commit changes.
-6. Откройте Settings → Pages.
-7. В Source выберите Deploy from a branch.
-8. Выберите ветку main и папку /docs, затем нажмите Save.
+6. Откройте https://vercel.com/new и импортируйте репозиторий.
+7. После импорта откройте Settings → Environment Variables.
+8. Добавьте OPENAI_API_KEY и отметьте Production и Preview.
+9. Нажмите Deploy.
 
-После загрузки GitHub автоматически запустит сборку. Сайт появится по адресу:
-https://romankhasin.github.io/creative-quality-checker/
+Vercel покажет новый адрес сайта после успешного развёртывания.
 
-Скрытые файлы не нужны: готовая версия сайта находится в видимой папке docs.
+Не вставляйте API-ключ в GitHub. Скрытые файлы для загрузки не нужны.
