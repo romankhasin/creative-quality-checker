@@ -65,7 +65,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
     if (!dataUrl) return response.status(400).json({ error: "Некорректное изображение" });
     const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const interaction = await client.interactions.create({
-      model: process.env.GEMINI_VISION_MODEL || "gemini-3.6-flash",
+      model: process.env.GEMINI_VISION_MODEL || "gemini-3.5-flash-lite",
       input: [
         {
           type: "text",
