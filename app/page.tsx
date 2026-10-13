@@ -522,7 +522,7 @@ export default function Home() {
       <header className="topbar">
         <a className="brand" href="#top" aria-label="Creative Check — главная">
           <span className="brand-mark">CC</span>
-          <span><b>Creative Check</b><small>контроль баннеров</small></span>
+          <span><b>Creative Check</b><small>Проверка баннеров</small></span>
         </a>
         <button className="ghost-button" onClick={() => setShowSettings((value) => !value)} aria-expanded={showSettings}>
           <span className="sliders-icon" aria-hidden="true">≡</span> Форматы
@@ -531,12 +531,9 @@ export default function Home() {
 
       <section className="hero" id="top">
         <div className="hero-copy">
-          <span className="eyebrow"><i /> Онлайн-проверка с ИИ</span>
-          <h1>Каждый баннер.<br /><em>До пикселя.</em></h1>
-          <p>Загрузите один креатив или всю сетку. Сервис проверит размеры, выравнивание элементов и единообразие дисклеймеров.</p>
-        </div>
-        <div className="hero-badge" aria-hidden="true">
-          <span>3</span><small>уровня<br />контроля</small>
+          <span className="eyebrow">Level Group · Креативы</span>
+          <h1>Проверка баннеров</h1>
+          <p>Загрузите один баннер или всю сетку. Проверяются размеры, выравнивание элементов и совпадение дисклеймеров.</p>
         </div>
       </section>
 
@@ -574,7 +571,7 @@ export default function Home() {
           onKeyDown={(event) => (event.key === "Enter" || event.key === " ") && inputRef.current?.click()}
         >
           <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={onFileInput} />
-          <div className="upload-symbol"><span>+</span></div>
+          <div className="upload-symbol" aria-hidden="true"><span>+</span></div>
           <div>
             <h2>{isAnalyzing ? "Анализируем креативы…" : "Перетащите креативы сюда"}</h2>
             <p>{isAnalyzing ? "Распознавание мелкого текста может занять немного времени" : "или нажмите, чтобы выбрать PNG, JPG или WEBP"}</p>
@@ -664,7 +661,7 @@ export default function Home() {
 
       <footer>
         <span>Creative Check</span>
-        <p>Автоматическая проверка помогает находить технические ошибки. Финальное решение по композиции остаётся за дизайнером.</p>
+        <p>Автопроверка находит технические ошибки. Решение по композиции остаётся за дизайнером.</p>
       </footer>
     </main>
   );
